@@ -56,8 +56,8 @@
 #define C1_B_Cb		1	/* B/Cb */
 #define C0_G_Y		0	/* G/luma */
 
-/* wait for 1 second for unexpected irq missing */
-#define KOFF_TIMEOUT_MS 1000
+/* wait for 300ms for unexpected irq missing */
+#define KOFF_TIMEOUT_MS 300
 #define KOFF_TIMEOUT msecs_to_jiffies(KOFF_TIMEOUT_MS)
 
 #define OVERFETCH_DISABLE_TOP		BIT(0)
