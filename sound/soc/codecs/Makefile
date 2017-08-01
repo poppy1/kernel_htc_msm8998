@@ -431,3 +431,7 @@ obj-$(CONFIG_SND_SOC_TAS2557_STEREO) += tas2557/
 #HTC_AUD_END
 obj-y += sdm660_cdc/
 obj-y += msm_sdw/
+
+# TODO: remove me b/62058353
+subdir-ccflags-y += \
+	-Wno-enum-conversion

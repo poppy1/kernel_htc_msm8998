@@ -71,7 +71,7 @@ obj-$(CONFIG_VIB_TRIGGERS)	+= vib-triggers.o
 obj-$(CONFIG_FPR_FPC)  += fpr_FingerprintCard/
 obj-$(CONFIG_GOODIX_FP)  += goodix_fp/
 
-# TODO: remove me b/62057517
+# TODO: remove me b/62058353
 subdir-ccflags-y += \
 	-Wno-ignored-attributes \
 	-Wno-header-guard
