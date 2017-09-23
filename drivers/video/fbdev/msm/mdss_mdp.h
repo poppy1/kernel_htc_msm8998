@@ -1000,6 +1000,7 @@ struct mdss_overlay_private {
 	/* HTC ADD*/
 	void *splash_mem_vaddr;
 	dma_addr_t splash_mem_dma;
+	bool cache_null_commit; /* Cache if preceding commit was NULL */
 };
 
 struct mdss_mdp_set_ot_params {
