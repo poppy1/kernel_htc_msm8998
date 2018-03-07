@@ -45,6 +45,7 @@
 #define BRI_GAIN_CHECK(x) (x>0 && x<=20000)
 #define BACKLIGHT_CALI(ori,comp) ((unsigned int)(ori*comp/BL_CALI_DEF))
 #define VALID_CALI_BKLT(val,min,max) ((min) > (val) ? (min) : ((val) > (max) ? (max) : (val)))
+#define DEFAUTL_AP_LEVLE 142
 
 enum {
 	CABC_INDEX = 0,
@@ -52,11 +53,12 @@ enum {
 	COLOR_TEMP_INDEX = 2,
 	BL_CALI_ENABLE_INDEX = 3,
 	RGB_CALI_ENABLE_INDEX = 4,
+	COLOR_PROFILE_INDEX = 5,
 };
 
 enum {
-	DEFAULT_MODE = 1,
-	SRGB_MODE,
+	DEFAULT_MODE = 0,	/* COLOR_MODE_DEFAULT */
+	SRGB_MODE = 7,		/* COLOR_MODE_SRGB */
 };
 
 struct attribute_status {
@@ -70,6 +72,7 @@ void htc_register_camera_bkl(int level);
 void htc_register_attrs(struct kobject *led_kobj, struct msm_fb_data_type *mfd);
 void htc_set_cabc(struct msm_fb_data_type *mfd, bool force);
 void htc_set_color_temp(struct msm_fb_data_type *mfd, bool force);
+void htc_set_color_profile(struct mdss_panel_data *pdata, bool force);
 bool htc_is_burst_bl_on(struct msm_fb_data_type *mfd, int value);
 void htc_reset_status(void);
 void htc_debugfs_init(struct msm_fb_data_type *mfd);
@@ -81,6 +84,8 @@ void htc_vreg_vol_switch(struct mdss_dsi_ctrl_pdata *ctrl_pdata, bool enable);
 void htc_vreg_init(struct platform_device *ctrl_pdev, struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 void htc_mdss_dsi_parse_esd_params(struct device_node *np);
 void htc_hal_color_feature_enabled(bool enable);
+void htc_ddic_color_mode_supported(bool enable);
 void htc_dimming_on(struct msm_fb_data_type *mfd);
 void htc_dimming_off(void);
+void htc_hal_rgbfilter_by_color(bool enable);
 #endif /* MDSS_FB_H */

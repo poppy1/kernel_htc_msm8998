@@ -3798,6 +3798,8 @@ static int __mdss_fb_perform_commit(struct msm_fb_data_type *mfd)
 	struct msm_fb_backup_type *fb_backup = &mfd->msm_fb_backup;
 	int ret = -ENOSYS;
 	u32 new_dsi_mode, dynamic_dsi_switch = 0;
+	struct mdss_panel_data *pdata;
+	pdata = dev_get_platdata(&mfd->pdev->dev);
 
 	if (!sync_pt_data->async_wait_fences)
 		mdss_fb_wait_for_fence(sync_pt_data);
@@ -3852,6 +3854,9 @@ skip_commit:
 		if (mfd->panel_info->pdest == DISPLAY_1) {
 			htc_set_color_temp(mfd, 0);
 			htc_update_bl_cali_data(mfd);  		/* HTC: set brightness calibration value */
+
+			if (pdata)
+				htc_set_color_profile(pdata, 0);
 		}
 
 		mdss_fb_update_backlight(mfd);

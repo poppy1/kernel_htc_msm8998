@@ -617,6 +617,8 @@ struct mdss_dsi_ctrl_pdata {
 
 	struct dsi_panel_cmds color_temp_cmds[COLOR_TEMP_MODE];
 	u8 color_temp_cnt;
+	struct dsi_panel_cmds color_default_cmds;
+	struct dsi_panel_cmds color_srgb_cmds;
 	struct dsi_panel_cmds disp_cali_cmds;
 	int color_rgb_loca;
 	int color_rgbcmy_loca;

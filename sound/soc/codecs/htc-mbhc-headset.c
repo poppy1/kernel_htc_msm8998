@@ -90,10 +90,15 @@ static struct htc_headset_dev htc_headset = {
 	.unsupported_type.name = NULL,
 };
 
+/* OCN ONLY + */
+static struct htc_hs_gpio aud_remote_sensor_gpio = {
+	.name = "htc,aud_remote_sensor"
+};
+/* OCN ONLY - */
+
 static struct platform_device *sound_device;
 static struct wcd_mbhc* __MBHC;
 static struct mutex ext_micbias_mutex;
-
 
 extern void __wcd_mbhc_update_fsm_source(struct wcd_mbhc *mbhc,
 				enum wcd_mbhc_plug_type plug_type);
@@ -104,6 +109,11 @@ extern void __wcd_mbhc_jack_report(struct wcd_mbhc *mbhc, int status, int mask);
 extern void __wcd_mbhc_clr_and_turnon_hph_padac(struct wcd_mbhc *mbhc);
 extern void __wcd_mbhc_set_and_turnoff_hph_padac(struct wcd_mbhc *mbhc);
 extern void __wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc);
+
+/* OCN ONLY + */
+static unsigned int pre_condition;
+extern int qpnp_pin_pull_config(int gpio, int value);
+/* OCN ONLY - */
 
 
 static int htc_typec_hs_dt_parser(struct platform_device *pdev)
@@ -173,6 +183,17 @@ static int htc_typec_hs_dt_parser(struct platform_device *pdev)
 		}
 	}
 
+/* OCN ONLY + */
+	aud_remote_sensor_gpio.no = of_get_named_gpio(pdev->dev.of_node,
+									aud_remote_sensor_gpio.name, 0);
+	if (gpio_is_valid(aud_remote_sensor_gpio.no)) {
+		ret = of_property_read_u32(pdev->dev.of_node,
+					"htc,typec-hs-pre-condition", &pre_condition);
+		if (ret < 0)
+			pre_condition = 0;
+	}
+/* OCN ONLY - */
+
 	return 0;
 }
 
@@ -212,6 +233,7 @@ static int htc_typec_hs_switch_gpio_get(enum htc_id_type index)
 	return gpio_get_value(htc_headset.switch_gpio[index].no);
 }
 
+#if 0 /* disable 3.5mm adapter */
 static int htc_hs_qpnp_remote_adc(int *adc)
 {
 	int rc = 0;
@@ -237,6 +259,7 @@ static int htc_hs_qpnp_remote_adc(int *adc)
 
 	return rc;
 }
+#endif
 
 static void htc_typec_hs_set_s3_pos(enum htc_s3_mode_type s3_mode)
 {
@@ -484,8 +507,6 @@ static int htc_typec_hs_irq_handler(struct wcd_mbhc *mbhc, int insert)
 
 static void htc_typec_adapter_irq_handler(struct wcd_mbhc *mbhc, int insert)
 {
-	int adc = 0;
-
 	pr_info("%s: enter, current_plug=%d\n", __func__, mbhc->current_plug);
 
 	WCD_MBHC_RSC_LOCK(mbhc);
@@ -501,8 +522,9 @@ static void htc_typec_adapter_irq_handler(struct wcd_mbhc *mbhc, int insert)
 			pr_info("%s: position flip\n", __func__);
 		}
 		if (is_typec_adapter_positive()) {
-			htc_hs_qpnp_remote_adc(&adc);
 #if 0 /* disable 3.5mm adapter */
+			int adc = 0;
+			htc_hs_qpnp_remote_adc(&adc);
 			if (adc > htc_headset.adc_25mm_min) {
 				mbhc->current_plug = MBHC_PLUG_TYPE_25MM_HEADSET;
 				mbhc->hph_status |= SND_JACK_HEADSET;
@@ -560,6 +582,10 @@ irqreturn_t htc_typec_hs_plug_detect_irq(struct wcd_mbhc *mbhc)
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MECH_DETECTION_TYPE, !insert);
 
 		if (insert) {
+/* OCN ONLY + */
+			if (pre_condition)
+				qpnp_pin_pull_config(aud_remote_sensor_gpio.no, 1/*QPNP_PIN_PULL_UP_1P5*/);
+/* OCN ONLY - */
 			htc_typec_hs_set_s5_en(true);
 			htc_typec_hs_set_ext_micbias(true, ANC_Headset_Detection_Mask);
 			htc_typec_hs_set_s3s4_position(POSITION_POSITIVE);
@@ -589,6 +615,12 @@ irqreturn_t htc_typec_hs_plug_detect_irq(struct wcd_mbhc *mbhc)
 				htc_typec_hs_enable_mic_bias(mbhc, false);
 				htc_typec_hs_set_s5_en(false);
 			}
+
+/* OCN ONLY + */
+			if (pre_condition)
+				qpnp_pin_pull_config(aud_remote_sensor_gpio.no, -1/*Recover*/);
+/* OCN ONLY - */
+
 			htc_typec_hs_set_ext_micbias(false, ANC_Headset_Detection_Mask); /* HPKB29557 ANC feature*/
 			/* set switch to accessory mode */
 			htc_typec_hs_set_fsa3030_accessory(true);

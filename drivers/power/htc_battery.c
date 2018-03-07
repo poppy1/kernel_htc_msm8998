@@ -2495,9 +2495,11 @@ static void htcchg_vbus_adjust_worker(struct work_struct *work)
 static void htcchg_init_worker(struct work_struct *work)
 {
 	int vbus_for_cc_init = get_property(htc_batt_info.usb_psy, POWER_SUPPLY_PROP_VOLTAGE_NOW)/1000;
+	static int init_cnt = 0;
 
         if(htc_batt_info.rep.charging_source != POWER_SUPPLY_TYPE_USB_HVDCP_3){
                 pr_info("[CC] Not QC3, ignore init...\n");
+		init_cnt = 0;
                 return;
         }
 
@@ -2506,10 +2508,17 @@ static void htcchg_init_worker(struct work_struct *work)
 		// Pulse D-
 		htc_batt_info.icharger->register_write(CMD_HVDCP_2_REG,
                                         SINGLE_DECREMENT_BIT, SINGLE_DECREMENT_BIT);
-
-		schedule_delayed_work(&htc_batt_info.htcchg_init_work,
-			msecs_to_jiffies(HTCCHG_INIT_PERIOD_MS));
+		init_cnt++;
+		if  (init_cnt > 30) {
+			not_entry_again = true;
+			init_cnt = 0;
+			pr_info("[CC][init] VBus cannot adjust!\n");
+			htcchg_cc_leave();
+		} else
+			schedule_delayed_work(&htc_batt_info.htcchg_init_work,
+				msecs_to_jiffies(HTCCHG_INIT_PERIOD_MS));
 	} else {
+		init_cnt = 0;
 		pr_info("[CC][init] IBAT <= %d mV !!! Vbus : %d\n",VUSB_INIT_MV,  vbus_for_cc_init);
 		// Open Cool Charger Path
 		set_batt_psy_property(POWER_SUPPLY_PROP_HTCCHG_GPIO_OPEN, 1);

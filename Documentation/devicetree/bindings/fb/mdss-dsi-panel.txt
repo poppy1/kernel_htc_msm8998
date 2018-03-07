@@ -583,11 +583,17 @@ Optional properites:
 - htc,mdss-dsi-bl-backlight             Specifies primary backlight device node when "bl_ctrl_backlight" was used.
 - htc,color-temp-cmds:		A node lists the color temperature setting that base on
 					qcom dsi controller protocol.
+- htc,color-default-cmds:      A byte stream formed by multiple dcs packets base on
+                                      qcom dsi controller protocol.
+- htc,color-srgb-cmds:         A byte stream formed by multiple dcs packets base on
+                                      qcom dsi controller protocol.
 - htc,rst-keep-high: A boolean property to indicate, whether device need lcm reset gpio(non cpu-gpio) keep high while suspend.
 - htc,esd-status-check-mode: Specifies HTC panel status check method for ESD recovery.
 					"tp_reg_check" = TP driver monitor IC status to check if need to recover panel.
 - htc,hal_color_feature_enabled: A boolean property to decide if need to use hal color feature
 for htc color calibration.
+- htc,hal_rgbfilter_by_color: A boolean property to decide if need to enable indepent rgb_filter to  corresponding color mode.
+htc,ddic_color_mode: A boolean property to decide if need to set color mode via DDIC.
 
 
 Additional properties added to the second level nodes that represent timings properties:

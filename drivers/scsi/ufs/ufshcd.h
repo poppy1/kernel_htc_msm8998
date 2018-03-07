@@ -868,6 +868,7 @@ struct ufs_hba {
 	struct work_struct eh_work;
 	struct work_struct pr_work;
 	struct work_struct eeh_work;
+	struct work_struct rls_work;
 
 	/* HBA Errors */
 	u32 errors;
@@ -968,6 +969,7 @@ struct ufs_hba {
 	
 	int			latency_hist_enabled;
 	struct io_latency_state io_lat_s;
+	bool restore_needed;
 	bool need_recovery;
 	bool force_error;
 };

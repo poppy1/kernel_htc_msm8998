@@ -990,6 +990,9 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	if (on_cmds->cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, on_cmds, CMD_REQ_COMMIT);
 
+	/* HTC : update color profile setting at LP mode*/
+	htc_set_color_profile(pdata, 1);
+
 	if (pinfo->compression_mode == COMPRESSION_DSC)
 		mdss_dsi_panel_dsc_pps_send(ctrl, pinfo);
 
@@ -3161,6 +3164,11 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		}
 	}
 
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->color_default_cmds,
+		"htc,color-default-cmds", "qcom,mdss-dsi-default-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->color_srgb_cmds,
+		"htc,color-srgb-cmds", "qcom,mdss-dsi-default-command-state");
+
 	/* Supported display calibration control*/
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->disp_cali_cmds,
 		"htc,disp-cali-cmds", "qcom,mdss-dsi-default-command-state");
@@ -3184,6 +3192,10 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	htc_hal_color_feature_enabled(
 		of_property_read_bool(np,"htc,hal_color_feature_enabled"));
+	htc_ddic_color_mode_supported(
+		of_property_read_bool(np,"htc,ddic_color_mode"));
+	htc_hal_rgbfilter_by_color(
+		of_property_read_bool(np,"htc,hal_rgbfilter_by_color"));
 
 	return 0;
 

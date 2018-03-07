@@ -938,7 +938,7 @@ static void multicolor_work_func(struct work_struct *work)
 	ldata = container_of(work, struct lp5562_led, led_work_multicolor);
 	I(" %s , Mode = %x\n" , __func__, ldata->Mode);
 
-	if (ldata->Mode > 1 && ldata->Mode <= 5)
+	if (ldata->Mode > 1 && ldata->Mode <= 6)
 		lp5562_led_enable(client, 1);
 	else if (ldata->Mode == 1)
 		lp5562_led_enable(client, 0);

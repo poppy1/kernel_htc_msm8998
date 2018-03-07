@@ -1511,6 +1511,8 @@ static int synaptics_rmi4_set_mode_reg(struct synaptics_rmi4_data *rmi4_data)
 	bool support_f51 = false, support_f54 = false;
 	int retval = 0, i, data_index;
 
+	pr_info("%s\n", __func__);
+
 	rmi = &(rmi4_data->rmi4_mod_info);
 
 	list_for_each_entry(fhandler, &rmi->support_fn_list, link) {
@@ -6705,7 +6707,8 @@ exit:
 	mutex_unlock(&exp_data.mutex);
 
 #ifdef HTC_FEATURE
-	if (bdata->lcm_reset_seq == 1 && bdata->support_glove && rmi4_data->glove_setting)
+	if (bdata->lcm_reset_seq == 1 && !rmi4_data->aod_mode
+			&& bdata->support_glove && rmi4_data->glove_setting)
 		synaptics_rmi4_set_mode_reg(rmi4_data);
 
 #endif

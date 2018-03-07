@@ -1423,9 +1423,11 @@ static int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 	return 0;
 }
 
-static void mmc_start_cmdq_request(struct mmc_host *host,
+static int mmc_start_cmdq_request(struct mmc_host *host,
 				   struct mmc_request *mrq)
 {
+	int ret = 0;
+
 	if (mrq->data) {
 		pr_debug("%s:     blksz %d blocks %d flags %08x tsac %lu ms nsac %d\n",
 			mmc_hostname(host), mrq->data->blksz,
@@ -1448,10 +1450,20 @@ static void mmc_start_cmdq_request(struct mmc_host *host,
 
 	mmc_host_clk_hold(host);
 	if (likely(host->cmdq_ops->request))
-		host->cmdq_ops->request(host, mrq);
-	else
-		pr_err("%s: %s: issue request failed\n", mmc_hostname(host),
-				__func__);
+		ret = host->cmdq_ops->request(host, mrq);
+	else {
+		ret = -ENOENT;
+		pr_err("%s: %s: cmdq request host op is not available\n",
+			mmc_hostname(host), __func__);
+	}
+
+	if (ret) {
+		mmc_host_clk_release(host);
+		pr_err("%s: %s: issue request failed, err=%d\n",
+			mmc_hostname(host), __func__, ret);
+	}
+
+	return ret;
 }
 
 /**
@@ -1955,8 +1967,7 @@ int mmc_cmdq_start_req(struct mmc_host *host, struct mmc_cmdq_req *cmdq_req)
 		mrq->cmd->error = -ENOMEDIUM;
 		return -ENOMEDIUM;
 	}
-	mmc_start_cmdq_request(host, mrq);
-	return 0;
+	return mmc_start_cmdq_request(host, mrq);
 }
 EXPORT_SYMBOL(mmc_cmdq_start_req);
 
@@ -3581,6 +3592,13 @@ static void _mmc_detect_change(struct mmc_host *host, unsigned long delay,
 		pm_wakeup_event(mmc_dev(host), 5000);
 
 	host->detect_change = 1;
+	/*
+	 * Change in cd_gpio state, so make sure detection part is
+	 * not overided because of manual resume.
+	 */
+	if (cd_irq && mmc_bus_manual_resume(host))
+		host->ignore_bus_resume_flags = true;
+
 	mmc_schedule_delayed_work(&host->detect, delay);
 }
 
@@ -4494,6 +4512,8 @@ void mmc_rescan(struct work_struct *work)
 		host->bus_ops->detect(host);
 
 	host->detect_change = 0;
+	if (host->ignore_bus_resume_flags)
+		host->ignore_bus_resume_flags = false;
 
 	/*
 	 * Let mmc_bus_put() free the bus/bus_ops if we've found that
@@ -4754,7 +4774,8 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 
 		spin_lock_irqsave(&host->lock, flags);
 		host->rescan_disable = 0;
-		if (mmc_bus_manual_resume(host)) {
+		if (mmc_bus_manual_resume(host) &&
+				!host->ignore_bus_resume_flags) {
 			spin_unlock_irqrestore(&host->lock, flags);
 			break;
 		}
