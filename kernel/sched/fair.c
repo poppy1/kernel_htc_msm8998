@@ -5383,7 +5383,7 @@ long group_norm_util(struct energy_env *eenv, struct sched_group *sg)
 static int find_new_capacity(struct energy_env *eenv,
 	const struct sched_group_energy * const sge)
 {
-	int idx;
+	int idx, max_idx = sge->nr_cap_states - 1;
 	unsigned long util = group_max_util(eenv);
 
 	/* default is max_cap if we don't find a match */
@@ -5396,9 +5396,7 @@ static int find_new_capacity(struct energy_env *eenv,
 		}
 	}
 
-	eenv->cap_idx = idx;
-
-	return idx;
+	return eenv->cap_idx;
 }
 
 static int group_idle_state(struct energy_env *eenv, struct sched_group *sg)
