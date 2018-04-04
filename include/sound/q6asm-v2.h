@@ -639,7 +639,8 @@ int q6asm_send_audio_effects_params(struct audio_client *ac, char *params,
 int q6asm_send_stream_cmd(struct audio_client *ac,
 			  struct msm_adsp_event_data *data);
 
-int q6asm_audio_map_shm_fd(struct audio_client *ac, int fd);
+int q6asm_audio_map_shm_fd(struct audio_client *ac, struct ion_client **client,
+			   struct ion_handle **handle, int fd);
 
 int q6asm_send_rtic_event_ack(struct audio_client *ac,
 			      void *param, uint32_t params_length);
@@ -692,4 +693,5 @@ uint8_t q6asm_get_stream_id_from_token(uint32_t token);
 int q6asm_adjust_session_clock(struct audio_client *ac,
 		uint32_t adjust_time_lsw,
 		uint32_t adjust_time_msw);
+
 #endif /* __Q6_ASM_H__ */

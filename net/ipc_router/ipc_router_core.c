@@ -1177,6 +1177,7 @@ static int post_pkt_to_port(struct msm_ipc_port *port_ptr,
 	mutex_lock(&port_ptr->port_rx_q_lock_lhc3);
 	if (pkt->ws_need)
 		__pm_stay_awake(port_ptr->port_rx_ws);
+
 	list_add_tail(&temp_pkt->list, &port_ptr->port_rx_q);
 	wake_up(&port_ptr->port_rx_wait_q);
 	notify = port_ptr->notify;

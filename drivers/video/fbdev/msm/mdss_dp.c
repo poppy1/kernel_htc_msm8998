@@ -39,6 +39,10 @@
 #include "mdss_hdcp.h"
 #include "mdss_debug.h"
 
+#ifdef CONFIG_TUSB1044
+extern int tusb1044_exist(void);
+#endif
+
 #define RGB_COMPONENTS		3
 #define VDDA_MIN_UV			1800000	/* uV units */
 #define VDDA_MAX_UV			1800000	/* uV units */
@@ -68,6 +72,35 @@ static int mdss_dp_process_phy_test_pattern_request(
 		struct mdss_dp_drv_pdata *dp);
 static int mdss_dp_send_audio_notification(
 	struct mdss_dp_drv_pdata *dp, int val);
+static int (*htc_dp_hpd_notify)(int hpd_high);
+
+void register_htc_dp_hpd_notify(int (*callback_fun)(int)){
+
+	if(htc_dp_hpd_notify == NULL){
+		htc_dp_hpd_notify = callback_fun;
+		pr_info("register callback function\n");
+	}
+	else
+		pr_err("DP status to USB callback has been registered\n");
+}
+
+void unregister_htc_dp_hpd_notify(void){
+
+	if(htc_dp_hpd_notify != NULL){
+		htc_dp_hpd_notify = NULL;
+		pr_info("unregister callback function\n");
+	}
+	else
+		pr_err("NO callback function registered\n");
+}
+void htc_notify_hpd_status(int hpd_high){
+
+	if(htc_dp_hpd_notify != NULL){
+		pr_info("hpd_high %d +\n",hpd_high);
+		htc_dp_hpd_notify(hpd_high);
+		pr_info("hpd_high %d -\n",hpd_high);
+	}
+}
 
 static inline void mdss_dp_reset_sink_count(struct mdss_dp_drv_pdata *dp)
 {
@@ -774,6 +807,13 @@ static int mdss_dp_pinctrl_set_state(
 static int mdss_dp_pinctrl_init(struct platform_device *pdev,
 			struct mdss_dp_drv_pdata *dp)
 {
+
+#ifdef CONFIG_TUSB1044
+	if (tusb1044_exist()) {
+		return PTR_ERR(dp->pin_res.pinctrl);
+	}
+#endif
+
 	dp->pin_res.pinctrl = devm_pinctrl_get(&pdev->dev);
 	if (IS_ERR_OR_NULL(dp->pin_res.pinctrl)) {
 		pr_err("failed to get pinctrl\n");
@@ -862,7 +902,6 @@ aux_en_gpio_err:
 static int mdss_dp_config_gpios(struct mdss_dp_drv_pdata *dp, bool enable)
 {
 	int rc = 0;
-
 	if (enable == true) {
 		rc = mdss_dp_request_gpios(dp);
 		if (rc) {
@@ -921,7 +960,6 @@ static int mdss_dp_parse_gpio_params(struct platform_device *pdev,
 	if (!gpio_is_valid(dp->aux_en_gpio)) {
 		pr_err("%d, Aux_en gpio not specified\n",
 					__LINE__);
-		return -EINVAL;
 	}
 
 	dp->aux_sel_gpio = of_get_named_gpio(
@@ -931,8 +969,14 @@ static int mdss_dp_parse_gpio_params(struct platform_device *pdev,
 	if (!gpio_is_valid(dp->aux_sel_gpio)) {
 		pr_err("%d, Aux_sel gpio not specified\n",
 					__LINE__);
-		return -EINVAL;
 	}
+
+#ifdef CONFIG_TUSB1044
+	if (tusb1044_exist()) {
+		dp->aux_sel_gpio = -1;
+		pr_info("re-driver exsit, remove aux gpios request\n");
+	};
+#endif
 
 	dp->usbplug_cc_gpio = of_get_named_gpio(
 			pdev->dev.of_node,
@@ -1990,6 +2034,7 @@ static int mdss_dp_host_init(struct mdss_panel_data *pdata)
 
 	mdss_dp_pinctrl_set_state(dp_drv, true);
 	mdss_dp_config_gpios(dp_drv, true);
+	htc_notify_hpd_status(true);
 
 	ret = mdss_dp_clk_ctrl(dp_drv, DP_CORE_PM, true);
 	if (ret) {
@@ -2063,6 +2108,7 @@ static int mdss_dp_host_deinit(struct mdss_dp_drv_pdata *dp)
 	mdss_dp_disable_mainlink_clocks(dp);
 	mdss_dp_clk_ctrl(dp, DP_CORE_PM, false);
 
+	htc_notify_hpd_status(false);
 	mdss_dp_regulator_ctrl(dp, false);
 	dp->dp_initialized = false;
 	pr_debug("Host deinitialized successfully\n");
@@ -2200,7 +2246,9 @@ static int mdss_dp_process_hpd_high(struct mdss_dp_drv_pdata *dp)
 		 */
 		pr_err("dpcd read failed, set failsafe parameters\n");
 		mdss_dp_set_default_link_parameters(dp);
-		goto read_edid;
+		/*AUX channel communication failed, stop DP output*/
+		pr_err("dpcd read failed, stop DP output\n");
+		goto end;
 	}
 
 	/*
@@ -2218,7 +2266,7 @@ static int mdss_dp_process_hpd_high(struct mdss_dp_drv_pdata *dp)
 		goto end;
 	}
 
-read_edid:
+/*read_edid:*/
 	ret = mdss_dp_edid_read(dp);
 	if (ret) {
 		pr_err("edid read error, setting default resolution\n");
@@ -4007,6 +4055,11 @@ static int mdss_dp_process_hpd_irq_high(struct mdss_dp_drv_pdata *dp)
 	if (!ret)
 		goto exit;
 
+	if (mdss_dp_is_ds_bridge_sink_count_zero(dp)) {
+		pr_debug("sink count is zero, nothing to do\n");
+		goto exit;
+	}
+
 	ret = mdss_dp_process_link_training_request(dp);
 	if (!ret)
 		goto exit;
@@ -4391,7 +4444,6 @@ static int mdss_dp_probe(struct platform_device *pdev)
 	if (ret) {
 		pr_err("pinctrl init failed, ret=%d\n",
 						ret);
-		goto probe_err;
 	}
 
 	ret = mdss_dp_parse_gpio_params(pdev, dp_drv);

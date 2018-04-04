@@ -169,9 +169,6 @@ dtb-$(CONFIG_ARCH_MSM8998) += msm8998-sim.dtb \
 	apq8098-v2.1-qrd.dtb \
 	apq8098-v2.1-mediabox.dtb \
 	apq8098-v2.1-svr20.dtb \
-	msm8998-v2.1-interposer-sdm660-cdp.dtb \
-	msm8998-v2.1-interposer-sdm660-mtp.dtb \
-	msm8998-v2.1-interposer-sdm660-qrd.dtb \
 	msm8998-9x55-rcm.dtb \
 	msm8998-9x55-cdp.dtb \
 	msm8998-9x55-mtp.dtb
@@ -179,86 +176,20 @@ endif
 
 dtb-$(CONFIG_ARCH_MSMHAMSTER) += msmhamster-rumi.dtb
 
-dtb-$(CONFIG_ARCH_SDM660) += sdm660-sim.dtb \
-	sdm660-internal-codec-cdp.dtb \
-	sdm660-internal-codec-mtp.dtb \
-	sdm660-internal-codec-rcm.dtb \
-	sdm660-cdp.dtb \
-	sdm660-mtp.dtb \
-	sdm660-qrd.dtb \
-	sdm660-rcm.dtb \
-	sdm660-rumi.dtb \
-	sdm660-pm660a-cdp.dtb \
-	sdm660-pm660a-mtp.dtb \
-	sdm660-pm660a-qrd.dtb \
-	sdm660-pm660a-rcm.dtb \
-	sdm660-pm660a-rumi.dtb \
-	sdm660-internal-codec-pm660a-cdp.dtb \
-	sdm660-internal-codec-pm660a-mtp.dtb \
-	sdm660-internal-codec-pm660a-rcm.dtb \
-	sdm660-pm660a-sim.dtb \
-	sda660-cdp.dtb \
-	sda660-mtp.dtb \
-	sda660-rcm.dtb \
-	sda660-pm660a-cdp.dtb \
-	sda660-pm660a-mtp.dtb \
-	sda660-pm660a-rcm.dtb \
-	sda660-pm660a-qrd-hdk.dtb \
-	sdm660-headset-jacktype-no-cdp.dtb \
-	sdm660-headset-jacktype-no-rcm.dtb \
-	sdm660-pm660a-headset-jacktype-no-cdp.dtb \
-	sdm660-pm660a-headset-jacktype-no-rcm.dtb \
-	sdm660-usbc-audio-mtp.dtb \
-	sdm660-usbc-audio-rcm.dtb \
-	sdm658-mtp.dtb \
-	sdm658-cdp.dtb \
-	sdm658-rcm.dtb \
-	sdm658-qrd.dtb \
-	sdm658-pm660a-mtp.dtb \
-	sdm658-pm660a-cdp.dtb \
-	sdm658-pm660a-rcm.dtb \
-	sdm658-pm660a-qrd.dtb \
-	sdm658-internal-codec-mtp.dtb \
-	sdm658-internal-codec-cdp.dtb \
-	sdm658-internal-codec-rcm.dtb \
-	sdm658-internal-codec-pm660a-mtp.dtb \
-	sdm658-internal-codec-pm660a-cdp.dtb \
-	sdm658-internal-codec-pm660a-rcm.dtb \
-	sda658-cdp.dtb \
-	sda658-mtp.dtb \
-	sda658-rcm.dtb \
-	sda658-pm660a-mtp.dtb \
-	sda658-pm660a-cdp.dtb \
-	sda658-pm660a-rcm.dtb
-
-dtb-$(CONFIG_ARCH_SDM630) += sdm630-rumi.dtb \
-	sdm630-pm660a-rumi.dtb \
-	sdm630-mtp.dtb \
-	sdm630-usbc-audio-mtp.dtb \
-	sdm630-usbc-audio-rcm.dtb \
-	sdm630-cdp.dtb \
-	sdm630-rcm.dtb \
-	sdm630-internal-codec-mtp.dtb \
-	sdm630-internal-codec-cdp.dtb \
-	sdm630-internal-codec-rcm.dtb \
-	sdm630-pm660a-cdp.dtb \
-	sdm630-pm660a-mtp.dtb \
-	sdm630-pm660a-rcm.dtb \
-	sdm630-pm660a-qrd.dtb \
-	sdm630-internal-codec-pm660a-cdp.dtb \
-	sdm630-internal-codec-pm660a-mtp.dtb \
-	sdm630-internal-codec-pm660a-rcm.dtb \
-	sda630-mtp.dtb \
-	sda630-cdp.dtb \
-	sda630-rcm.dtb \
-	sda630-pm660a-mtp.dtb \
-	sda630-pm660a-cdp.dtb \
-	sda630-pm660a-rcm.dtb \
-	sda630-pm660a-qrd-hdk.dtb \
-	sdm630-headset-jacktype-no-cdp.dtb \
-	sdm630-headset-jacktype-no-rcm.dtb \
-	sdm630-pm660a-headset-jacktype-no-cdp.dtb \
-	sdm630-pm660a-headset-jacktype-no-rcm.dtb
+# HTC msm8998 device dtbs
+dtb-$(CONFIG_ARCH_MSM8998) += \
+	msm8998-v2.1-htc_ocn-xa.dtb \
+	msm8998-v2.1-htc_ocn-xb.dtb \
+	msm8998-v2.1-htc_ocn-xc.dtb \
+	msm8998-v2.1-htc_ocn-xd.dtb \
+	msm8998-v2.1-htc_ocn-xe.dtb \
+	msm8998-v2.1-htc_ocn-xf.dtb \
+	msm8998-v2.1-htc_ocn-a.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-xb.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-xc.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-xd.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-xe.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-a.dtb
 
 ifeq ($(CONFIG_ARM64),y)
 always          := $(dtb-y)

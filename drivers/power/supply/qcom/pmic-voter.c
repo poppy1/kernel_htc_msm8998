@@ -349,6 +349,14 @@ const char *get_effective_client(struct votable *votable)
  *	The return from the callback when present and needs to be called
  *	or zero.
  */
+#ifdef CONFIG_HTC_BATT
+#define SKIP_PRINT_VOTER_CNT		3
+const char *c_skip_print_voter[SKIP_PRINT_VOTER_CNT] = {
+	"FG_WS",
+	"PL_ENABLE_INDIRECT",
+	"QNOVO_DISABLE"
+};
+#endif //CONFIG_HTC_BATT
 int vote(struct votable *votable, const char *client_str, bool enabled, int val)
 {
 	int effective_id = -EINVAL;
@@ -356,12 +364,29 @@ int vote(struct votable *votable, const char *client_str, bool enabled, int val)
 	int client_id;
 	int rc = 0;
 	bool similar_vote = false;
+#ifdef CONFIG_HTC_BATT
+	bool is_print_log = true;
+	int idx = 0;
+#endif //CONFIG_HTC_BATT
 
 	lock_votable(votable);
+
+#ifdef CONFIG_HTC_BATT
+	for (idx = 0; idx < SKIP_PRINT_VOTER_CNT; idx++){
+		if(strcmp(votable->name, c_skip_print_voter[idx]) == 0){
+			is_print_log = false;
+			break;
+		}
+	}
+#endif //CONFIG_HTC_BATT
 
 	client_id = get_client_id(votable, client_str);
 	if (client_id < 0) {
 		rc = client_id;
+#ifdef CONFIG_HTC_BATT
+		pr_info("%s: %s,Client ID = %d over range\n",
+			votable->name, client_str, client_id);
+#endif //CONFIG_HTC_BATT
 		goto out;
 	}
 
@@ -387,12 +412,26 @@ int vote(struct votable *votable, const char *client_str, bool enabled, int val)
 	votable->votes[client_id].value = val;
 
 	if (similar_vote && votable->voted_on) {
+#ifdef CONFIG_HTC_BATT
+		if (is_print_log)
+			pr_info("%s: %s,%d Ignoring similar vote %s of val=%d\n",
+				votable->name,
+				client_str, client_id, enabled ? "on" : "off", val);
+		else
+#endif //CONFIG_HTC_BATT
 		pr_debug("%s: %s,%d Ignoring similar vote %s of val=%d\n",
 			votable->name,
 			client_str, client_id, enabled ? "on" : "off", val);
 		goto out;
 	}
 
+#ifdef CONFIG_HTC_BATT
+	if (is_print_log)
+		pr_info("%s: %s,%d voting %s of val=%d\n",
+			votable->name,
+			client_str, client_id, enabled ? "on" : "off", val);
+	else
+#endif //CONFIG_HTC_BATT
 	pr_debug("%s: %s,%d voting %s of val=%d\n",
 		votable->name,
 		client_str, client_id, enabled ? "on" : "off", val);
@@ -419,6 +458,14 @@ int vote(struct votable *votable, const char *client_str, bool enabled, int val)
 			|| (effective_result != votable->effective_result)) {
 		votable->effective_client_id = effective_id;
 		votable->effective_result = effective_result;
+#ifdef CONFIG_HTC_BATT
+		if(is_print_log)
+			pr_info("%s: effective vote is now %d voted by %s,%d\n",
+				votable->name, effective_result,
+				get_client_str(votable, effective_id),
+				effective_id);
+		else
+#endif //CONFIG_HTC_BATT
 		pr_debug("%s: effective vote is now %d voted by %s,%d\n",
 			votable->name, effective_result,
 			get_client_str(votable, effective_id),
@@ -521,11 +568,10 @@ static int show_votable_clients(struct seq_file *m, void *data)
 
 	lock_votable(votable);
 
-	seq_printf(m, "Votable %s:\n", votable->name);
-	seq_puts(m, "clients:\n");
 	for (i = 0; i < votable->num_clients; i++) {
 		if (votable->client_strs[i]) {
-			seq_printf(m, "%-15s:\t\ten=%d\t\tv=%d\n",
+			seq_printf(m, "%s: %s:\t\t\ten=%d v=%d\n",
+					votable->name,
 					votable->client_strs[i],
 					votable->votes[i].enabled,
 					votable->votes[i].value);
@@ -544,11 +590,11 @@ static int show_votable_clients(struct seq_file *m, void *data)
 		break;
 	}
 
-	seq_printf(m, "type: %s\n", type_str);
-	seq_puts(m, "Effective:\n");
 	effective_client_str = get_effective_client_locked(votable);
-	seq_printf(m, "%-15s:\t\tv=%d\n",
+	seq_printf(m, "%s: effective=%s type=%s v=%d\n",
+			votable->name,
 			effective_client_str ? effective_client_str : "none",
+			type_str,
 			get_effective_result_locked(votable));
 	unlock_votable(votable);
 

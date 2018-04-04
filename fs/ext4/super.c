@@ -806,8 +806,11 @@ static void ext4_put_super(struct super_block *sb)
 		aborted = is_journal_aborted(sbi->s_journal);
 		err = jbd2_journal_destroy(sbi->s_journal);
 		sbi->s_journal = NULL;
-		if ((err < 0) && !aborted)
+		if ((err < 0) && !aborted) {
+			clear_opt(sb, ERRORS_PANIC);
+			set_opt(sb, ERRORS_CONT);
 			ext4_abort(sb, "Couldn't clean up the journal");
+		}
 	}
 
 	ext4_unregister_sysfs(sb);
