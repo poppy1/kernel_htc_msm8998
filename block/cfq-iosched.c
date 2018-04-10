@@ -16,6 +16,7 @@
 #include <linux/blktrace_api.h>
 #include <linux/blk-cgroup.h>
 #include "blk.h"
+#include "../kernel/sched/sched.h"
 
 /*
  * tunables
@@ -34,6 +35,10 @@ static u64 cfq_slice_idle = NSEC_PER_SEC / 125;
 static u64 cfq_group_idle = NSEC_PER_SEC / 125;
 static const u64 cfq_target_latency = (u64)NSEC_PER_SEC * 3/10; /* 300 ms */
 static const int cfq_hist_divisor = 4;
+
+#ifdef CONFIG_HTC_PNPMGR
+extern int launch_event_enabled;
+#endif
 
 /*
  * offset from end of queue service tree for idle class
@@ -75,6 +80,8 @@ static struct kmem_cache *cfq_pool;
 #define CFQ_WEIGHT_LEGACY_MIN	10
 #define CFQ_WEIGHT_LEGACY_DFL	500
 #define CFQ_WEIGHT_LEGACY_MAX	1000
+
+#define DEFAULT_CPU_SHARE 1024
 
 struct cfq_ttime {
 	u64 last_end_request;
@@ -3657,6 +3664,22 @@ static void cfq_init_prio_data(struct cfq_queue *cfqq, struct cfq_io_cq *cic)
 {
 	struct task_struct *tsk = current;
 	int ioprio_class;
+
+#ifdef CONFIG_HTC_PNPMGR
+	if (launch_event_enabled)
+	{
+		int bg;
+		bg = (tsk->sched_task_group->shares < DEFAULT_CPU_SHARE)? 1 : 0;
+		if (bg) {
+			cfqq->ioprio_class = IOPRIO_CLASS_IDLE;
+			cfqq->ioprio = 7;
+			cfqq->org_ioprio = cfqq->ioprio;
+			cfq_clear_cfqq_idle_window(cfqq);
+			cfq_mark_cfqq_prio_changed(cfqq);
+			return;
+		}
+	}
+#endif
 
 	if (!cfq_cfqq_prio_changed(cfqq))
 		return;
