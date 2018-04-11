@@ -372,7 +372,7 @@ config HTC_NETWORK_MODIFY
 	bool "Enable HTC_NETWORK_MODIFY config"
 	default y
 	---help---
-	Enable HTC_NETWORK_MODIFY
+        Enable HTC_NETWORK_MODIFY
 
 endmenu
 
