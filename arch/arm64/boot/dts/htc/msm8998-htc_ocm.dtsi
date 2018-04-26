@@ -213,6 +213,7 @@
 	qcom,fg-chg-term-current = <50>;
 	qcom,fg-cutoff-voltage = <3400>;
 	qcom,fg-rsense-sel = <0>;
+	htc,fg-fake-batt-temp;
 };
 
 / {

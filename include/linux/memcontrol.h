@@ -85,10 +85,32 @@ enum mem_cgroup_events_target {
 	MEM_CGROUP_NTARGETS,
 };
 
+/*
+ * Bits in struct cg_proto.flags
+ */
+enum cg_proto_flags {
+	/* Currently active and new sockets should be assigned to cgroups */
+	MEMCG_SOCK_ACTIVE,
+	/* It was ever activated; we must disarm static keys on destruction */
+	MEMCG_SOCK_ACTIVATED,
+};
+
 struct cg_proto {
 	struct page_counter	memory_allocated;	/* Current allocated memory. */
+	struct percpu_counter	sockets_allocated;	/* Current number of sockets. */
 	int			memory_pressure;
-	bool			active;
+	long			sysctl_mem[3];
+	unsigned long		flags;
+	/*
+	 * memcg field is used to find which memcg we belong directly
+	 * Each memcg struct can hold more than one cg_proto, so container_of
+	 * won't really cut.
+	 *
+	 * The elegant solution would be having an inverse function to
+	 * proto_cgroup in struct proto, but that means polluting the structure
+	 * for everybody, instead of just for memcg users.
+	 */
+	struct mem_cgroup	*memcg;
 };
 
 #ifdef CONFIG_MEMCG
@@ -178,9 +200,6 @@ struct mem_cgroup {
 	unsigned long low;
 	unsigned long high;
 
-	/* Range enforcement for interrupt charges */
-	struct work_struct high_work;
-
 	unsigned long soft_limit;
 
 	/* vmpressure notifications */
@@ -264,8 +283,7 @@ struct mem_cgroup {
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */
 };
-
-extern struct mem_cgroup *root_mem_cgroup;
+extern struct cgroup_subsys_state *mem_cgroup_root_css;
 
 /**
  * mem_cgroup_events - count memory events against a cgroup
@@ -661,6 +679,12 @@ void mem_cgroup_count_vm_event(struct mm_struct *mm, enum vm_event_item idx)
 }
 #endif /* CONFIG_MEMCG */
 
+enum {
+	UNDER_LIMIT,
+	SOFT_LIMIT,
+	OVER_LIMIT,
+};
+
 #ifdef CONFIG_CGROUP_WRITEBACK
 
 struct list_head *mem_cgroup_cgwb_list(struct mem_cgroup *memcg);
@@ -687,28 +711,17 @@ static inline void mem_cgroup_wb_stats(struct bdi_writeback *wb,
 #endif	/* CONFIG_CGROUP_WRITEBACK */
 
 struct sock;
+#if defined(CONFIG_INET) && defined(CONFIG_MEMCG_KMEM)
 void sock_update_memcg(struct sock *sk);
 void sock_release_memcg(struct sock *sk);
-bool mem_cgroup_charge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages);
-void mem_cgroup_uncharge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages);
-#if defined(CONFIG_MEMCG) && defined(CONFIG_INET)
-extern struct static_key memcg_sockets_enabled_key;
-#define mem_cgroup_sockets_enabled static_key_false(&memcg_sockets_enabled_key)
-static inline bool mem_cgroup_under_socket_pressure(struct mem_cgroup *memcg)
-{
-#ifdef CONFIG_MEMCG_KMEM
-	return memcg->tcp_mem.memory_pressure;
 #else
-	return false;
-#endif
-}
-#else
-#define mem_cgroup_sockets_enabled 0
-static inline bool mem_cgroup_under_socket_pressure(struct mem_cgroup *memcg)
+static inline void sock_update_memcg(struct sock *sk)
 {
-	return false;
 }
-#endif
+static inline void sock_release_memcg(struct sock *sk)
+{
+}
+#endif /* CONFIG_INET && CONFIG_MEMCG_KMEM */
 
 #ifdef CONFIG_MEMCG_KMEM
 extern struct static_key memcg_kmem_enabled_key;

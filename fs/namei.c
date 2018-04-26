@@ -219,10 +219,9 @@ getname_kernel(const char * filename)
 	if (len <= EMBEDDED_NAME_MAX) {
 		result->name = (char *)result->iname;
 	} else if (len <= PATH_MAX) {
-		const size_t size = offsetof(struct filename, iname[1]);
 		struct filename *tmp;
 
-		tmp = kmalloc(size, GFP_KERNEL);
+		tmp = kmalloc(sizeof(*tmp), GFP_KERNEL);
 		if (unlikely(!tmp)) {
 			__putname(result);
 			return ERR_PTR(-ENOMEM);
@@ -586,10 +585,9 @@ static int __nd_alloc_stack(struct nameidata *nd)
 static bool path_connected(const struct path *path)
 {
 	struct vfsmount *mnt = path->mnt;
-	struct super_block *sb = mnt->mnt_sb;
 
-	/* Bind mounts and multi-root filesystems can have disconnected paths */
-	if (!(sb->s_iflags & SB_I_MULTIROOT) && (mnt->mnt_root == sb->s_root))
+	/* Only bind mounts can have disconnected paths */
+	if (mnt->mnt_root == mnt->mnt_sb->s_root)
 		return true;
 
 	return is_subdir(path->dentry, mnt->mnt_root);
@@ -2016,9 +2014,6 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
 {
 	int retval = 0;
 	const char *s = nd->name->name;
-
-	if (!*s)
-		flags &= ~LOOKUP_RCU;
 
 	nd->last_type = LAST_ROOT; /* if there are only slashes... */
 	nd->flags = flags | LOOKUP_JUMPED | LOOKUP_PARENT;
@@ -3833,6 +3828,7 @@ SYSCALL_DEFINE1(rmdir, const char __user *, pathname)
 	return do_rmdir(AT_FDCWD, pathname);
 }
 
+extern atomic_t em_remount;
 /**
  * vfs_unlink - unlink a filesystem object
  * @dir:	parent directory
@@ -3855,12 +3851,19 @@ int vfs_unlink2(struct vfsmount *mnt, struct inode *dir, struct dentry *dentry, 
 {
 	struct inode *target = dentry->d_inode;
 	int error = may_delete(mnt, dir, dentry, 0);
+	struct super_block *sb = dentry->d_sb;
 
 	if (error)
 		return error;
 
 	if (!dir->i_op->unlink)
 		return -EPERM;
+
+	if (atomic_read(&em_remount) && sb && (sb->s_flags & MS_EMERGENCY_RO)) {
+		printk_ratelimited(KERN_WARNING "VFS reject: %s pid:%d(%s)(parent:%d/%s) file %s\n", __func__,
+				current->pid, current->comm, current->parent->pid, current->parent->comm, dentry->d_name.name);
+		return -EROFS;
+	}
 
 	mutex_lock(&target->i_mutex);
 	if (is_local_mountpoint(dentry))
@@ -4269,11 +4272,12 @@ int vfs_rename2(struct vfsmount *mnt,
 {
 	int error;
 	bool is_dir = d_is_dir(old_dentry);
+	const unsigned char *old_name;
 	struct inode *source = old_dentry->d_inode;
 	struct inode *target = new_dentry->d_inode;
 	bool new_is_dir = false;
 	unsigned max_links = new_dir->i_sb->s_max_links;
-	struct name_snapshot old_name;
+	struct super_block *sb = old_dentry->d_sb;
 
 	/*
 	 * Check source == target.
@@ -4305,6 +4309,13 @@ int vfs_rename2(struct vfsmount *mnt,
 	if (flags && !old_dir->i_op->rename2)
 		return -EINVAL;
 
+	if (atomic_read(&em_remount) && sb && (sb->s_flags & MS_EMERGENCY_RO)) {
+		printk_ratelimited(KERN_WARNING "VFS reject: %s pid:%d(%s)(parent:%d/%s) old_file %s new_file %s\n",
+				__func__, current->pid, current->comm, current->parent->pid, current->parent->comm,
+				old_dentry->d_name.name, new_dentry->d_name.name);
+		return -EROFS;
+	}
+
 	/*
 	 * If we are going to change the parent - check write permissions,
 	 * we'll need to flip '..'.
@@ -4327,7 +4338,7 @@ int vfs_rename2(struct vfsmount *mnt,
 	if (error)
 		return error;
 
-	take_dentry_name_snapshot(&old_name, old_dentry);
+	old_name = fsnotify_oldname_init(old_dentry->d_name.name);
 	dget(new_dentry);
 	if (!is_dir || (flags & RENAME_EXCHANGE))
 		lock_two_nondirectories(source, target);
@@ -4388,14 +4399,14 @@ out:
 		mutex_unlock(&target->i_mutex);
 	dput(new_dentry);
 	if (!error) {
-		fsnotify_move(old_dir, new_dir, old_name.name, is_dir,
+		fsnotify_move(old_dir, new_dir, old_name, is_dir,
 			      !(flags & RENAME_EXCHANGE) ? target : NULL, old_dentry);
 		if (flags & RENAME_EXCHANGE) {
 			fsnotify_move(new_dir, old_dir, old_dentry->d_name.name,
 				      new_is_dir, NULL, new_dentry);
 		}
 	}
-	release_dentry_name_snapshot(&old_name);
+	fsnotify_oldname_free(old_name);
 
 	return error;
 }

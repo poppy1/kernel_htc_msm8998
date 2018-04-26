@@ -36,10 +36,6 @@
 #include "mdss_dba_utils.h"
 #include "mdss_htc_util.h"
 
-#ifdef CONFIG_STATE_NOTIFIER
-#include <linux/state_notifier.h>
-#endif
-
 #define CMDLINE_DSI_CTL_NUM_STRING_LEN 2
 
 /* Master structure to hold all the information about the DSI/panel */
@@ -507,18 +503,13 @@ static int mdss_dsi_panel_power_ctrl(struct mdss_panel_data *pdata,
 		if ((pinfo->panel_power_state != MDSS_PANEL_POWER_LCD_DISABLED)
 		     && (pinfo->panel_power_state != MDSS_PANEL_POWER_OFF))
 			ret = mdss_dsi_panel_power_off(pdata);
-#ifdef CONFIG_STATE_NOTIFIER
-		state_suspend();
-#endif
+
 		break;
 	case MDSS_PANEL_POWER_ON:
 		if (mdss_dsi_is_panel_on_lp(pdata))
 			ret = mdss_dsi_panel_power_lp(pdata, false);
 		else
 			ret = mdss_dsi_panel_power_on(pdata);
-#ifdef CONFIG_STATE_NOTIFIER
-		state_resume();
-#endif
 		break;
 	case MDSS_PANEL_POWER_LP1:
 	case MDSS_PANEL_POWER_LP2:
@@ -1002,7 +993,7 @@ static int mdss_dsi_cmd_flush(struct file *file, fl_owner_t id)
 	while (len >= sizeof(*dchdr)) {
 		dchdr = (struct dsi_ctrl_hdr *)bp;
 		dchdr->dlen = ntohs(dchdr->dlen);
-		if (dchdr->dlen > len || dchdr->dlen < 0) {
+		if (dchdr->dlen > len) {
 			pr_err("%s: dtsi cmd=%x error, len=%d\n",
 				__func__, dchdr->dtype, dchdr->dlen);
 			kfree(buf);
@@ -2600,7 +2591,7 @@ static void mdss_dsi_dba_work(struct work_struct *work)
 	} else {
 		pr_debug("%s: dba device not ready, queue again\n", __func__);
 		queue_delayed_work(ctrl_pdata->workq,
-				&ctrl_pdata->dba_work, msecs_to_jiffies(1000));
+				&ctrl_pdata->dba_work, HZ);
 	}
 }
 
@@ -2896,7 +2887,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		if (IS_ENABLED(CONFIG_MSM_DBA) &&
 			pdata->panel_info.is_dba_panel) {
 				queue_delayed_work(ctrl_pdata->workq,
-					&ctrl_pdata->dba_work, msecs_to_jiffies(1000));
+					&ctrl_pdata->dba_work, HZ);
 		}
 		break;
 	case MDSS_EVENT_DSI_TIMING_DB_CTRL:

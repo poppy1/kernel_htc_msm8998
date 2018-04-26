@@ -933,7 +933,6 @@ struct mdss_mdp_writeback_arg {
 struct mdss_mdp_wfd;
 
 struct mdss_overlay_private {
-	bool vsync_en;
 	ktime_t vsync_time;
 	ktime_t lineptr_time;
 	struct kernfs_node *vsync_event_sd;
@@ -1000,7 +999,6 @@ struct mdss_overlay_private {
 	/* HTC ADD*/
 	void *splash_mem_vaddr;
 	dma_addr_t splash_mem_dma;
-	bool cache_null_commit; /* Cache if preceding commit was NULL */
 };
 
 struct mdss_mdp_set_ot_params {

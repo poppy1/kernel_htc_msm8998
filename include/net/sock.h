@@ -58,8 +58,6 @@
 #include <linux/memcontrol.h>
 #include <linux/static_key.h>
 #include <linux/sched.h>
-#include <linux/wait.h>
-#include <linux/cgroup-defs.h>
 
 #include <linux/filter.h>
 #include <linux/rculist_nulls.h>
@@ -71,6 +69,22 @@
 #include <net/tcp_states.h>
 #include <linux/net_tstamp.h>
 
+struct cgroup;
+struct cgroup_subsys;
+#ifdef CONFIG_NET
+int mem_cgroup_sockets_init(struct mem_cgroup *memcg, struct cgroup_subsys *ss);
+void mem_cgroup_sockets_destroy(struct mem_cgroup *memcg);
+#else
+static inline
+int mem_cgroup_sockets_init(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
+{
+	return 0;
+}
+static inline
+void mem_cgroup_sockets_destroy(struct mem_cgroup *memcg)
+{
+}
+#endif
 /*
  * This structure really needs to be cleaned up.
  * Most of it is for TCP, and not used by any of
@@ -229,6 +243,7 @@ struct sock_common {
 	/* public: */
 };
 
+struct cg_proto;
 /**
   *	struct sock - network layer representation of sockets
   *	@__sk_common: shared layout with inet_timewait_sock
@@ -272,6 +287,7 @@ struct sock_common {
   *	@sk_ack_backlog: current listen backlog
   *	@sk_max_ack_backlog: listen backlog set in listen()
   *	@sk_priority: %SO_PRIORITY setting
+  *	@sk_cgrp_prioidx: socket group's priority map index
   *	@sk_type: socket type (%SOCK_STREAM, etc)
   *	@sk_protocol: which protocol this socket belongs in this network family
   *	@sk_peer_pid: &struct pid for this socket's peer
@@ -292,8 +308,8 @@ struct sock_common {
   *	@sk_send_head: front of stuff to transmit
   *	@sk_security: used by security modules
   *	@sk_mark: generic packet mark
-  *	@sk_cgrp_data: cgroup data for this cgroup
-  *	@sk_memcg: this socket's memory cgroup association
+  *	@sk_classid: this socket's cgroup classid
+  *	@sk_cgrp: this socket's cgroup-specific proto data
   *	@sk_write_pending: a write to stream socket waits to start
   *	@sk_state_change: callback to indicate change in the state of the sock
   *	@sk_data_ready: callback to indicate there is data to be processed
@@ -409,7 +425,9 @@ struct sock {
 	u32			sk_ack_backlog;
 	u32			sk_max_ack_backlog;
 	__u32			sk_priority;
-	__u32			sk_mark;
+#if IS_ENABLED(CONFIG_CGROUP_NET_PRIO)
+	__u32			sk_cgrp_prioidx;
+#endif
 	struct pid		*sk_peer_pid;
 	const struct cred	*sk_peer_cred;
 	long			sk_rcvtimeo;
@@ -427,9 +445,12 @@ struct sock {
 #ifdef CONFIG_SECURITY
 	void			*sk_security;
 #endif
+	__u32			sk_mark;
 	kuid_t			sk_uid;
-	struct sock_cgroup_data	sk_cgrp_data;
-	struct mem_cgroup	*sk_memcg;
+#ifdef CONFIG_CGROUP_NET_CLASSID
+	u32			sk_classid;
+#endif
+	struct cg_proto		*sk_cgrp;
 	void			(*sk_state_change)(struct sock *sk);
 	void			(*sk_data_ready)(struct sock *sk);
 	void			(*sk_write_space)(struct sock *sk);
@@ -1080,6 +1101,23 @@ static inline void sk_refcnt_debug_release(const struct sock *sk)
 #define sk_refcnt_debug_release(sk) do { } while (0)
 #endif /* SOCK_REFCNT_DEBUG */
 
+#if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_NET)
+extern struct static_key memcg_socket_limit_enabled;
+static inline struct cg_proto *parent_cg_proto(struct proto *proto,
+					       struct cg_proto *cg_proto)
+{
+	return proto->proto_cgroup(parent_mem_cgroup(cg_proto->memcg));
+}
+#define mem_cgroup_sockets_enabled static_key_false(&memcg_socket_limit_enabled)
+#else
+#define mem_cgroup_sockets_enabled 0
+static inline struct cg_proto *parent_cg_proto(struct proto *proto,
+					       struct cg_proto *cg_proto)
+{
+	return NULL;
+}
+#endif
+
 static inline bool sk_stream_memory_free(const struct sock *sk)
 {
 	if (sk->sk_wmem_queued >= sk->sk_sndbuf)
@@ -1106,9 +1144,8 @@ static inline bool sk_under_memory_pressure(const struct sock *sk)
 	if (!sk->sk_prot->memory_pressure)
 		return false;
 
-	if (mem_cgroup_sockets_enabled && sk->sk_memcg &&
-	    mem_cgroup_under_socket_pressure(sk->sk_memcg))
-		return true;
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		return !!sk->sk_cgrp->memory_pressure;
 
 	return !!*sk->sk_prot->memory_pressure;
 }
@@ -1122,6 +1159,15 @@ static inline void sk_leave_memory_pressure(struct sock *sk)
 
 	if (*memory_pressure)
 		*memory_pressure = 0;
+
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp) {
+		struct cg_proto *cg_proto = sk->sk_cgrp;
+		struct proto *prot = sk->sk_prot;
+
+		for (; cg_proto; cg_proto = parent_cg_proto(prot, cg_proto))
+			cg_proto->memory_pressure = 0;
+	}
+
 }
 
 static inline void sk_enter_memory_pressure(struct sock *sk)
@@ -1129,46 +1175,116 @@ static inline void sk_enter_memory_pressure(struct sock *sk)
 	if (!sk->sk_prot->enter_memory_pressure)
 		return;
 
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp) {
+		struct cg_proto *cg_proto = sk->sk_cgrp;
+		struct proto *prot = sk->sk_prot;
+
+		for (; cg_proto; cg_proto = parent_cg_proto(prot, cg_proto))
+			cg_proto->memory_pressure = 1;
+	}
+
 	sk->sk_prot->enter_memory_pressure(sk);
 }
 
 static inline long sk_prot_mem_limits(const struct sock *sk, int index)
 {
-	return sk->sk_prot->sysctl_mem[index];
+	long *prot = sk->sk_prot->sysctl_mem;
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		prot = sk->sk_cgrp->sysctl_mem;
+	return prot[index];
+}
+
+static inline void memcg_memory_allocated_add(struct cg_proto *prot,
+					      unsigned long amt,
+					      int *parent_status)
+{
+	page_counter_charge(&prot->memory_allocated, amt);
+
+	if (page_counter_read(&prot->memory_allocated) >
+	    prot->memory_allocated.limit)
+		*parent_status = OVER_LIMIT;
+}
+
+static inline void memcg_memory_allocated_sub(struct cg_proto *prot,
+					      unsigned long amt)
+{
+	page_counter_uncharge(&prot->memory_allocated, amt);
 }
 
 static inline long
 sk_memory_allocated(const struct sock *sk)
 {
-	return atomic_long_read(sk->sk_prot->memory_allocated);
+	struct proto *prot = sk->sk_prot;
+
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		return page_counter_read(&sk->sk_cgrp->memory_allocated);
+
+	return atomic_long_read(prot->memory_allocated);
 }
 
 static inline long
-sk_memory_allocated_add(struct sock *sk, int amt)
+sk_memory_allocated_add(struct sock *sk, int amt, int *parent_status)
 {
-	return atomic_long_add_return(amt, sk->sk_prot->memory_allocated);
+	struct proto *prot = sk->sk_prot;
+
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp) {
+		memcg_memory_allocated_add(sk->sk_cgrp, amt, parent_status);
+		/* update the root cgroup regardless */
+		atomic_long_add_return(amt, prot->memory_allocated);
+		return page_counter_read(&sk->sk_cgrp->memory_allocated);
+	}
+
+	return atomic_long_add_return(amt, prot->memory_allocated);
 }
 
 static inline void
 sk_memory_allocated_sub(struct sock *sk, int amt)
 {
-	atomic_long_sub(amt, sk->sk_prot->memory_allocated);
+	struct proto *prot = sk->sk_prot;
+
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		memcg_memory_allocated_sub(sk->sk_cgrp, amt);
+
+	atomic_long_sub(amt, prot->memory_allocated);
 }
 
 static inline void sk_sockets_allocated_dec(struct sock *sk)
 {
-	percpu_counter_dec(sk->sk_prot->sockets_allocated);
+	struct proto *prot = sk->sk_prot;
+
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp) {
+		struct cg_proto *cg_proto = sk->sk_cgrp;
+
+		for (; cg_proto; cg_proto = parent_cg_proto(prot, cg_proto))
+			percpu_counter_dec(&cg_proto->sockets_allocated);
+	}
+
+	percpu_counter_dec(prot->sockets_allocated);
 }
 
 static inline void sk_sockets_allocated_inc(struct sock *sk)
 {
-	percpu_counter_inc(sk->sk_prot->sockets_allocated);
+	struct proto *prot = sk->sk_prot;
+
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp) {
+		struct cg_proto *cg_proto = sk->sk_cgrp;
+
+		for (; cg_proto; cg_proto = parent_cg_proto(prot, cg_proto))
+			percpu_counter_inc(&cg_proto->sockets_allocated);
+	}
+
+	percpu_counter_inc(prot->sockets_allocated);
 }
 
 static inline int
 sk_sockets_allocated_read_positive(struct sock *sk)
 {
-	return percpu_counter_read_positive(sk->sk_prot->sockets_allocated);
+	struct proto *prot = sk->sk_prot;
+
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		return percpu_counter_read_positive(&sk->sk_cgrp->sockets_allocated);
+
+	return percpu_counter_read_positive(prot->sockets_allocated);
 }
 
 static inline int
@@ -1787,12 +1903,12 @@ static inline bool sk_has_allocations(const struct sock *sk)
 }
 
 /**
- * skwq_has_sleeper - check if there are any waiting processes
+ * wq_has_sleeper - check if there are any waiting processes
  * @wq: struct socket_wq
  *
  * Returns true if socket_wq has waiting processes
  *
- * The purpose of the skwq_has_sleeper and sock_poll_wait is to wrap the memory
+ * The purpose of the wq_has_sleeper and sock_poll_wait is to wrap the memory
  * barrier call. They were added due to the race found within the tcp code.
  *
  * Consider following tcp code paths:
@@ -1818,9 +1934,15 @@ static inline bool sk_has_allocations(const struct sock *sk)
  * data on the socket.
  *
  */
-static inline bool skwq_has_sleeper(struct socket_wq *wq)
+static inline bool wq_has_sleeper(struct socket_wq *wq)
 {
-	return wq && wq_has_sleeper(&wq->wait);
+	/* We need to be sure we are in sync with the
+	 * add_wait_queue modifications to the wait queue.
+	 *
+	 * This memory barrier is paired in the sock_poll_wait.
+	 */
+	smp_mb();
+	return wq && waitqueue_active(&wq->wait);
 }
 
 /**

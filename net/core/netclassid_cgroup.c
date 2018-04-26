@@ -62,8 +62,8 @@ static int update_classid_sock(const void *v, struct file *file, unsigned n)
 	struct socket *sock = sock_from_file(file, &err);
 
 	if (sock)
-		sock_cgroup_set_classid(&sock->sk->sk_cgrp_data,
-					(unsigned long)v);
+		sock->sk->sk_classid = (u32)(unsigned long)v;
+
 	return 0;
 }
 

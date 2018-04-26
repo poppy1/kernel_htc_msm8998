@@ -27,12 +27,6 @@
 
 #include <linux/fdtable.h>
 
-/*
- * netprio allocates per-net_device priomap array which is indexed by
- * css->id.  Limiting css ID to 16bits doesn't lose anything.
- */
-#define NETPRIO_ID_MAX		USHRT_MAX
-
 #define PRIOMAP_MIN_SZ		128
 
 /*
@@ -150,9 +144,6 @@ static int cgrp_css_online(struct cgroup_subsys_state *css)
 	struct net_device *dev;
 	int ret = 0;
 
-	if (css->id > NETPRIO_ID_MAX)
-		return -ENOSPC;
-
 	if (!parent_css)
 		return 0;
 
@@ -223,8 +214,7 @@ static int update_netprio(const void *v, struct file *file, unsigned n)
 	int err;
 	struct socket *sock = sock_from_file(file, &err);
 	if (sock)
-		sock_cgroup_set_prioidx(&sock->sk->sk_cgrp_data,
-					(unsigned long)v);
+		sock->sk->sk_cgrp_prioidx = (u32)(unsigned long)v;
 	return 0;
 }
 

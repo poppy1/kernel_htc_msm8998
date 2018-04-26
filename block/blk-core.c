@@ -247,7 +247,7 @@ EXPORT_SYMBOL(blk_start_queue_async);
  **/
 void blk_start_queue(struct request_queue *q)
 {
-	WARN_ON(!in_interrupt() && !irqs_disabled());
+	WARN_ON(!irqs_disabled());
 
 	queue_flag_clear(QUEUE_FLAG_STOPPED, q);
 	__blk_run_queue(q);
@@ -540,8 +540,8 @@ void blk_set_queue_dying(struct request_queue *q)
 
 		blk_queue_for_each_rl(rl, q) {
 			if (rl->rq_pool) {
-				wake_up_all(&rl->wait[BLK_RW_SYNC]);
-				wake_up_all(&rl->wait[BLK_RW_ASYNC]);
+				wake_up(&rl->wait[BLK_RW_SYNC]);
+				wake_up(&rl->wait[BLK_RW_ASYNC]);
 			}
 		}
 	}
@@ -1783,11 +1783,6 @@ get_rq:
 	rw_flags = bio_data_dir(bio);
 	if (sync)
 		rw_flags |= REQ_SYNC;
-
-	/*
-	 * Add in META/PRIO flags, if set, before we get to the IO scheduler
-	 */
-	rw_flags |= (bio->bi_rw & (REQ_META | REQ_PRIO));
 
 	/*
 	 * Grab a free request. This is might sleep but can not fail.

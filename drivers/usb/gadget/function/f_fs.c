@@ -890,7 +890,7 @@ retry:
 		}
 
 		if (io_data->aio) {
-			req = usb_ep_alloc_request(ep->ep, GFP_ATOMIC);
+			req = usb_ep_alloc_request(ep->ep, GFP_KERNEL);
 			if (unlikely(!req))
 				goto error_lock;
 
@@ -1581,6 +1581,7 @@ ffs_fs_kill_sb(struct super_block *sb)
 	if (sb->s_fs_info) {
 		ffs_release_dev(sb->s_fs_info);
 		ffs_data_closed(sb->s_fs_info);
+		ffs_data_put(sb->s_fs_info);
 	}
 
 	//ffs_log("exit");
@@ -3173,8 +3174,8 @@ static int _ffs_func_bind(struct usb_configuration *c,
 	struct ffs_data *ffs = func->ffs;
 
 	const int full = !!func->ffs->fs_descs_count;
-	const int high = !!func->ffs->hs_descs_count;
-	const int super = !!func->ffs->ss_descs_count;
+	const int high = func->ffs->hs_descs_count;
+	const int super = func->ffs->ss_descs_count;
 
 	int fs_len, hs_len, ss_len, ret, i;
 	struct ffs_ep *eps_ptr;

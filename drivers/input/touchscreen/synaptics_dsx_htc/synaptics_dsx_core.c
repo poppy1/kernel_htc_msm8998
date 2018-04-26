@@ -6710,7 +6710,6 @@ exit:
 	if (bdata->lcm_reset_seq == 1 && !rmi4_data->aod_mode
 			&& bdata->support_glove && rmi4_data->glove_setting)
 		synaptics_rmi4_set_mode_reg(rmi4_data);
-
 #endif
 
 	rmi4_data->suspend = false;

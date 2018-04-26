@@ -299,7 +299,6 @@ static int print_sparse_mem_entry(int id, void *ptr, void *data)
 	if (!(m->flags & KGSL_MEMFLAGS_SPARSE_VIRT))
 		return 0;
 
-	spin_lock(&entry->bind_lock);
 	node = rb_first(&entry->bind_tree);
 
 	while (node != NULL) {
@@ -310,7 +309,6 @@ static int print_sparse_mem_entry(int id, void *ptr, void *data)
 				obj->v_off, obj->size, obj->p_off);
 		node = rb_next(node);
 	}
-	spin_unlock(&entry->bind_lock);
 
 	seq_putc(s, '\n');
 
@@ -406,6 +404,8 @@ void kgsl_process_init_debugfs(struct kgsl_process_private *private)
 	 */
 
 	if (IS_ERR_OR_NULL(private->debug_root)) {
+		WARN((private->debug_root == NULL),
+			"Unable to create debugfs dir for %s\n", name);
 		private->debug_root = NULL;
 		return;
 	}

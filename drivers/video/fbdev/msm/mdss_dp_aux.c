@@ -256,7 +256,7 @@ static int dp_aux_write_cmds(struct mdss_dp_drv_pdata *ep,
 	tp->no_send_stop = true;
 	len = dp_cmd_fifo_tx(ep);
 
-	if (!wait_for_completion_timeout(&ep->aux_comp, msecs_to_jiffies(25))) {
+	if (!wait_for_completion_timeout(&ep->aux_comp, HZ/4)) {
 		pr_err("aux write timeout\n");
 		ep->aux_error_num = EDP_AUX_ERR_TOUT;
 
@@ -326,7 +326,7 @@ static int dp_aux_read_cmds(struct mdss_dp_drv_pdata *ep,
 	tp->no_send_stop = false;
 	dp_cmd_fifo_tx(ep);
 
-	if (!wait_for_completion_timeout(&ep->aux_comp, msecs_to_jiffies(250))) {
+	if (!wait_for_completion_timeout(&ep->aux_comp, HZ/4)) {
 		pr_err("aux read timeout\n");
 		ep->aux_error_num = EDP_AUX_ERR_TOUT;
 
@@ -1582,7 +1582,7 @@ static void dp_sink_parse_sink_count(struct mdss_dp_drv_pdata *ep)
 	data = *bp++;
 
 	/* BIT 7, BIT 5:0 */
-	ep->sink_count.count = (data & BIT(7)) >> 1 | (data & 0x3F);
+	ep->sink_count.count = (data & BIT(7)) << 6 | (data & 0x63);
 	/* BIT 6*/
 	ep->sink_count.cp_ready = data & BIT(6);
 

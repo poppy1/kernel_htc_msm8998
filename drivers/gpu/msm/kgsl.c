@@ -2269,7 +2269,7 @@ static long _gpuobj_map_useraddr(struct kgsl_device *device,
 		struct kgsl_mem_entry *entry,
 		struct kgsl_gpuobj_import *param)
 {
-	struct kgsl_gpuobj_import_useraddr useraddr = {0};
+	struct kgsl_gpuobj_import_useraddr useraddr;
 	int ret;
 
 	param->flags &= KGSL_MEMFLAGS_GPUREADONLY
@@ -3451,7 +3451,6 @@ long kgsl_ioctl_sparse_virt_free(struct kgsl_device_private *dev_priv,
 	return 0;
 }
 
-/* entry->bind_lock must be held by the caller */
 static int _sparse_add_to_bind_tree(struct kgsl_mem_entry *entry,
 		uint64_t v_offset,
 		struct kgsl_memdesc *memdesc,
@@ -3462,7 +3461,7 @@ static int _sparse_add_to_bind_tree(struct kgsl_mem_entry *entry,
 	struct sparse_bind_object *new;
 	struct rb_node **node, *parent = NULL;
 
-	new = kzalloc(sizeof(*new), GFP_ATOMIC);
+	new = kzalloc(sizeof(*new), GFP_KERNEL);
 	if (new == NULL)
 		return -ENOMEM;
 
@@ -3480,16 +3479,10 @@ static int _sparse_add_to_bind_tree(struct kgsl_mem_entry *entry,
 		parent = *node;
 		this = rb_entry(parent, struct sparse_bind_object, node);
 
-		if ((new->v_off < this->v_off) &&
-			((new->v_off + new->size) <= this->v_off))
+		if (new->v_off < this->v_off)
 			node = &parent->rb_left;
-		else if ((new->v_off > this->v_off) &&
-			(new->v_off >= (this->v_off + this->size)))
+		else if (new->v_off > this->v_off)
 			node = &parent->rb_right;
-		else {
-			kfree(new);
-			return -EADDRINUSE;
-		}
 	}
 
 	rb_link_node(&new->node, parent, node);
@@ -3502,6 +3495,7 @@ static int _sparse_rm_from_bind_tree(struct kgsl_mem_entry *entry,
 		struct sparse_bind_object *obj,
 		uint64_t v_offset, uint64_t size)
 {
+	spin_lock(&entry->bind_lock);
 	if (v_offset == obj->v_off && size >= obj->size) {
 		/*
 		 * We are all encompassing, remove the entry and free
@@ -3534,6 +3528,7 @@ static int _sparse_rm_from_bind_tree(struct kgsl_mem_entry *entry,
 
 		obj->size = v_offset - obj->v_off;
 
+		spin_unlock(&entry->bind_lock);
 		ret = _sparse_add_to_bind_tree(entry, v_offset + size,
 				obj->p_memdesc,
 				obj->p_off + (v_offset - obj->v_off) + size,
@@ -3543,16 +3538,19 @@ static int _sparse_rm_from_bind_tree(struct kgsl_mem_entry *entry,
 		return ret;
 	}
 
+	spin_unlock(&entry->bind_lock);
+
 	return 0;
 }
 
-/* entry->bind_lock must be held by the caller */
 static struct sparse_bind_object *_find_containing_bind_obj(
 		struct kgsl_mem_entry *entry,
 		uint64_t offset, uint64_t size)
 {
 	struct sparse_bind_object *obj = NULL;
 	struct rb_node *node = entry->bind_tree.rb_node;
+
+	spin_lock(&entry->bind_lock);
 
 	while (node != NULL) {
 		obj = rb_entry(node, struct sparse_bind_object, node);
@@ -3572,15 +3570,32 @@ static struct sparse_bind_object *_find_containing_bind_obj(
 		}
 	}
 
+	spin_unlock(&entry->bind_lock);
+
 	return obj;
 }
 
-/* entry->bind_lock must be held by the caller */
 static int _sparse_unbind(struct kgsl_mem_entry *entry,
 		struct sparse_bind_object *bind_obj,
 		uint64_t offset, uint64_t size)
 {
+	struct kgsl_memdesc *memdesc = bind_obj->p_memdesc;
+	struct kgsl_pagetable *pt = memdesc->pagetable;
 	int ret;
+
+	if (memdesc->cur_bindings < (size / PAGE_SIZE))
+		return -EINVAL;
+
+	memdesc->cur_bindings -= size / PAGE_SIZE;
+
+	ret = kgsl_mmu_unmap_offset(pt, memdesc,
+			entry->memdesc.gpuaddr, offset, size);
+	if (ret)
+		return ret;
+
+	ret = kgsl_mmu_sparse_dummy_map(pt, &entry->memdesc, offset, size);
+	if (ret)
+		return ret;
 
 	ret = _sparse_rm_from_bind_tree(entry, bind_obj, offset, size);
 	if (ret == 0) {
@@ -3595,8 +3610,6 @@ static long sparse_unbind_range(struct kgsl_sparse_binding_object *obj,
 	struct kgsl_mem_entry *virt_entry)
 {
 	struct sparse_bind_object *bind_obj;
-	struct kgsl_memdesc *memdesc;
-	struct kgsl_pagetable *pt;
 	int ret = 0;
 	uint64_t size = obj->size;
 	uint64_t tmp_size = obj->size;
@@ -3604,14 +3617,9 @@ static long sparse_unbind_range(struct kgsl_sparse_binding_object *obj,
 
 	while (size > 0 && ret == 0) {
 		tmp_size = size;
-
-		spin_lock(&virt_entry->bind_lock);
 		bind_obj = _find_containing_bind_obj(virt_entry, offset, size);
-
-		if (bind_obj == NULL) {
-			spin_unlock(&virt_entry->bind_lock);
+		if (bind_obj == NULL)
 			return 0;
-		}
 
 		if (bind_obj->v_off > offset) {
 			tmp_size = size - bind_obj->v_off - offset;
@@ -3628,28 +3636,7 @@ static long sparse_unbind_range(struct kgsl_sparse_binding_object *obj,
 				tmp_size = bind_obj->size;
 		}
 
-		memdesc = bind_obj->p_memdesc;
-		pt = memdesc->pagetable;
-
-		if (memdesc->cur_bindings < (tmp_size / PAGE_SIZE)) {
-			spin_unlock(&virt_entry->bind_lock);
-			return -EINVAL;
-		}
-
-		memdesc->cur_bindings -= tmp_size / PAGE_SIZE;
-
 		ret = _sparse_unbind(virt_entry, bind_obj, offset, tmp_size);
-		spin_unlock(&virt_entry->bind_lock);
-
-		ret = kgsl_mmu_unmap_offset(pt, memdesc,
-				virt_entry->memdesc.gpuaddr, offset, tmp_size);
-		if (ret)
-			return ret;
-
-		ret = kgsl_mmu_sparse_dummy_map(pt, memdesc, offset, tmp_size);
-		if (ret)
-			return ret;
-
 		if (ret == 0) {
 			offset += tmp_size;
 			size -= tmp_size;
@@ -3710,11 +3697,8 @@ static int _sparse_bind(struct kgsl_process_private *process,
 		return ret;
 	}
 
-	spin_lock(&virt_entry->bind_lock);
 	ret = _sparse_add_to_bind_tree(virt_entry, v_offset, memdesc,
 			p_offset, size, flags);
-	spin_unlock(&virt_entry->bind_lock);
-
 	if (ret == 0)
 		memdesc->cur_bindings += size / PAGE_SIZE;
 
@@ -4425,13 +4409,13 @@ kgsl_get_unmapped_area(struct file *file, unsigned long addr,
 	if (!kgsl_memdesc_use_cpu_map(&entry->memdesc)) {
 		val = get_unmapped_area(NULL, addr, len, 0, flags);
 		if (IS_ERR_VALUE(val))
-			KGSL_DRV_ERR_RATELIMIT(device,
+			KGSL_MEM_ERR(device,
 				"get_unmapped_area: pid %d addr %lx pgoff %lx len %ld failed error %d\n",
 				private->pid, addr, pgoff, len, (int) val);
 	} else {
 		 val = _get_svm_area(private, entry, addr, len, flags);
 		 if (IS_ERR_VALUE(val))
-			KGSL_DRV_ERR_RATELIMIT(device,
+			KGSL_MEM_ERR(device,
 				"_get_svm_area: pid %d mmap_base %lx addr %lx pgoff %lx len %ld failed error %d\n",
 				private->pid, current->mm->mmap_base, addr,
 				pgoff, len, (int) val);
@@ -4876,7 +4860,7 @@ static void kgsl_core_exit(void)
 static int __init kgsl_core_init(void)
 {
 	int result = 0;
-	struct sched_param param = { .sched_priority = 6 };
+	struct sched_param param = { .sched_priority = 2 };
 
 	/* alloc major and minor device numbers */
 	result = alloc_chrdev_region(&kgsl_driver.major, 0, KGSL_DEVICE_MAX,
@@ -4942,18 +4926,6 @@ static int __init kgsl_core_init(void)
 
 	kgsl_driver.mem_workqueue = alloc_workqueue("kgsl-mementry",
 		WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
-
-	init_kthread_worker(&kgsl_driver.worker);
-
-	kgsl_driver.worker_thread = kthread_run(kthread_worker_fn,
-		&kgsl_driver.worker, "kgsl_worker_thread");
-
-	if (IS_ERR(kgsl_driver.worker_thread)) {
-		pr_err("unable to start kgsl thread\n");
-		goto err;
-	}
-
-	sched_setscheduler(kgsl_driver.worker_thread, SCHED_FIFO, &param);
 
 	init_kthread_worker(&kgsl_driver.worker);
 

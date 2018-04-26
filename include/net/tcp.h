@@ -301,9 +301,8 @@ extern int tcp_memory_pressure;
 /* optimized version of sk_under_memory_pressure() for TCP sockets */
 static inline bool tcp_under_memory_pressure(const struct sock *sk)
 {
-	if (mem_cgroup_sockets_enabled && sk->sk_memcg &&
-	    mem_cgroup_under_socket_pressure(sk->sk_memcg))
-		return true;
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		return !!sk->sk_cgrp->memory_pressure;
 
 	return tcp_memory_pressure;
 }
@@ -1217,11 +1216,9 @@ void tcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 
 static inline int tcp_win_from_space(int space)
 {
-	int tcp_adv_win_scale = sysctl_tcp_adv_win_scale;
-
-	return tcp_adv_win_scale <= 0 ?
-		(space>>(-tcp_adv_win_scale)) :
-		space - (space>>tcp_adv_win_scale);
+	return sysctl_tcp_adv_win_scale<=0 ?
+		(space>>(-sysctl_tcp_adv_win_scale)) :
+		space - (space>>sysctl_tcp_adv_win_scale);
 }
 
 /* Note: caller must be prepared to deal with negative returns */
@@ -1632,12 +1629,12 @@ static inline void tcp_highest_sack_reset(struct sock *sk)
 	tcp_sk(sk)->highest_sack = tcp_write_queue_head(sk);
 }
 
-/* Called when old skb is about to be deleted and replaced by new skb */
-static inline void tcp_highest_sack_replace(struct sock *sk,
+/* Called when old skb is about to be deleted (to be combined with new skb) */
+static inline void tcp_highest_sack_combine(struct sock *sk,
 					    struct sk_buff *old,
 					    struct sk_buff *new)
 {
-	if (old == tcp_highest_sack(sk))
+	if (tcp_sk(sk)->sacked_out && (old == tcp_sk(sk)->highest_sack))
 		tcp_sk(sk)->highest_sack = new;
 }
 

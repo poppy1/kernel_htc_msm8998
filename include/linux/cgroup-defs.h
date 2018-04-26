@@ -430,8 +430,6 @@ struct cgroup_subsys {
 	void (*css_reset)(struct cgroup_subsys_state *css);
 	void (*css_e_css_changed)(struct cgroup_subsys_state *css);
 
-	int (*allow_attach)(struct cgroup_subsys_state *css,
-			    struct cgroup_taskset *tset);
 	int (*can_attach)(struct cgroup_taskset *tset);
 	void (*cancel_attach)(struct cgroup_taskset *tset);
 	void (*attach)(struct cgroup_taskset *tset);
@@ -531,41 +529,5 @@ static inline void cgroup_threadgroup_change_begin(struct task_struct *tsk) {}
 static inline void cgroup_threadgroup_change_end(struct task_struct *tsk) {}
 
 #endif	/* CONFIG_CGROUPS */
-
-#ifdef CONFIG_SOCK_CGROUP_DATA
-
-struct sock_cgroup_data {
-	u16	prioidx;
-	u32	classid;
-};
-
-static inline u16 sock_cgroup_prioidx(struct sock_cgroup_data *skcd)
-{
-	return skcd->prioidx;
-}
-
-static inline u32 sock_cgroup_classid(struct sock_cgroup_data *skcd)
-{
-	return skcd->classid;
-}
-
-static inline void sock_cgroup_set_prioidx(struct sock_cgroup_data *skcd,
-					   u16 prioidx)
-{
-	skcd->prioidx = prioidx;
-}
-
-static inline void sock_cgroup_set_classid(struct sock_cgroup_data *skcd,
-					   u32 classid)
-{
-	skcd->classid = classid;
-}
-
-#else	/* CONFIG_SOCK_CGROUP_DATA */
-
-struct sock_cgroup_data {
-};
-
-#endif	/* CONFIG_SOCK_CGROUP_DATA */
 
 #endif	/* _LINUX_CGROUP_DEFS_H */
