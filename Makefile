@@ -397,8 +397,17 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -std=gnu89 $(call cc-option,-fno-PIE)
-
+		   -std=gnu89 $(call cc-option,-fno-PIE) \
+		   -fno-code-hoisting \
+		   -fno-fp-int-builtin-inexact \
+		   -fno-ipa-bit-cp \
+		   -fno-ipa-icf-variables \
+		   -fno-ipa-vrp \
+		   -fno-printf-return-value \
+		   -fno-shrink-wrap-separate \
+		   -fno-store-merging \
+		   -fno-peel-loops \
+		   -fno-split-loops 
 
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
