@@ -823,10 +823,32 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	if (err) {
 		pr_err("%s: %s: failed to setup tx desc: %d\n",
 		       mmc_hostname(mmc), __func__, err);
-		goto out;
+		goto desc_err;
 	}
 
 	cq_host->mrq_slot[tag] = mrq;
+
+	if (mmc->perf_enable && mrq->data) {
+		if (mrq->data->flags == MMC_DATA_READ) {
+			if (mmc->perf.cmdq_read_map == 0)
+				mmc->perf.cmdq_read_start = ktime_get();
+			mmc->perf.cmdq_read_map |= 1 << tag;
+		} else {
+			if (mmc->perf.cmdq_write_map == 0)
+				mmc->perf.cmdq_write_start = ktime_get();
+			mmc->perf.cmdq_write_map |= 1 << tag;
+		}
+
+		if (mmc->perf.cmdq_read_map & mmc->perf.cmdq_write_map) {
+			pr_warn_ratelimited("%s: %s: statistic R/W map error, R: 0x%04lx, W:0x%04lx\n",
+				mmc_hostname(mmc), __func__,
+				mmc->perf.cmdq_read_map, mmc->perf.cmdq_write_map);
+			if (mrq->data->flags == MMC_DATA_READ)
+				mmc->perf.cmdq_write_map &= ~(1 << tag);
+			else
+				mmc->perf.cmdq_read_map &= ~(1 << tag);
+		}
+	}
 
 	/* PM QoS */
 	sdhci_msm_pm_qos_irq_vote(host);
@@ -843,7 +865,19 @@ ring_doorbell:
 	/* Commit the doorbell write immediately */
 	wmb();
 
+	return err;
+
+desc_err:
+	if (cq_host->ops->crypto_cfg_end) {
+		err = cq_host->ops->crypto_cfg_end(mmc, mrq);
+		if (err) {
+			pr_err("%s: failed to end ice config: err %d tag %d\n",
+					mmc_hostname(mmc), err, tag);
+		}
+	}
 out:
+	if (err)
+		cmdq_runtime_pm_put(cq_host);
 	return err;
 }
 

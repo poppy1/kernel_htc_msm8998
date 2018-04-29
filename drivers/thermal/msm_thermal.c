@@ -52,6 +52,7 @@
 #include <linux/io.h>
 
 #include <asm/cacheflush.h>
+#include <linux/delay.h>
 
 #define CREATE_TRACE_POINTS
 #define TRACE_MSM_THERMAL
@@ -200,6 +201,7 @@ static bool cluster_info_probed;
 static bool cluster_info_nodes_called;
 static bool in_suspend, retry_in_progress;
 static bool lmh_dcvs_available;
+static bool lmh_dcvs_is_supported;
 static int *tsens_id_map;
 static int *zone_id_tsens_map;
 static DEFINE_MUTEX(vdd_rstr_mutex);
@@ -995,7 +997,7 @@ static int  msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 
 	switch (event) {
 	case CPUFREQ_ADJUST:
-		max_freq_req = (lmh_dcvs_available) ? UINT_MAX :
+		max_freq_req = (lmh_dcvs_is_supported) ? UINT_MAX :
 			cpus[policy->cpu].parent_ptr->limited_max_freq;
 		min_freq_req = cpus[policy->cpu].parent_ptr->limited_min_freq;
 		pr_debug("mitigating CPU%d to freq max: %u min: %u\n",
@@ -1413,6 +1415,24 @@ static int get_kernel_cluster_info(int *cluster_id, cpumask_t *cluster_cpus)
 		}
 	}
 
+	return cluster_cnt;
+}
+
+int get_cluster_info(int *cluster_id, unsigned long int *cluster_mask)
+{
+	int temp_cluster_id[NR_CPUS] = {[0 ... NR_CPUS-1] = -1};
+	int i, cluster_cnt = 0;
+	cpumask_t cluster_cpus[NR_CPUS];
+	cluster_cnt = get_kernel_cluster_info(temp_cluster_id, cluster_cpus);
+	if(cluster_cnt <= 0){
+		pr_debug("cluster_cnt:%d , Cluster Info not defined. KTM continues.\n", cluster_cnt);
+                return cluster_cnt;
+	}else{
+		for (i = 0; i < cluster_cnt; i++) {
+			cluster_id[i] = temp_cluster_id[i];
+			cluster_mask[i] = *cpumask_bits(&cluster_cpus[i]);
+		}
+	}
 	return cluster_cnt;
 }
 
@@ -2913,12 +2933,22 @@ static void therm_reset_notify(struct therm_threshold *thresh_data)
 
 	switch (thresh_data->trip_triggered) {
 	case THERMAL_TRIP_CONFIGURABLE_HI:
+		mdelay(50);
 		ret = therm_get_temp(thresh_data->sensor_id,
 				thresh_data->id_type, &temp);
-		if (ret)
+		if (ret) {
 			pr_err("Unable to read TSENS sensor:%d. err:%d\n",
 				thresh_data->sensor_id, ret);
-		msm_thermal_bite(thresh_data->sensor_id, temp);
+			break;
+		}
+		if (thresh_data->sensor_id < 0 || thresh_data->sensor_id > max_tsens_num) {
+			pr_err("unknown tsens id");
+			break;
+		}
+		if (temp >= msm_thermal_info.therm_reset_temp_degC)
+			msm_thermal_bite(thresh_data->sensor_id, temp);
+		else
+			pr_err("msm_thermal ignore thermal reset");
 		break;
 	case THERMAL_TRIP_CONFIGURABLE_LOW:
 		break;
@@ -3153,6 +3183,8 @@ static int __ref update_offline_cores(int val)
 		}
 	}
 
+	pr_info("cpus_offlined: %d\n", cpus_offlined);
+
 	if (pend_hotplug_req && !in_suspend && !retry_in_progress) {
 		retry_in_progress = true;
 		schedule_delayed_work(&retry_hotplug_work,
@@ -3213,8 +3245,10 @@ static __ref int do_hotplug(void *data)
 				mask |= BIT(cpu);
 			mutex_unlock(&devices->hotplug_dev->clnt_lock);
 		}
-		if (mask != cpus_offlined)
+		if (mask != cpus_offlined) {
 			update_offline_cores(mask);
+			pr_info("cpu mask updated: %d\n", mask);
+		}
 		mutex_unlock(&core_control_mutex);
 
 		if (devices && devices->hotplug_dev) {
@@ -5044,6 +5078,8 @@ static ssize_t __ref store_cpus_offlined(struct kobject *kobj,
 		goto done_cc;
 	}
 
+	pr_info("\"%s\"(PID:%i) request cpus offlined mask %d \n", current->comm, current->pid, val);
+
 	for_each_possible_cpu(cpu) {
 		if (!(msm_thermal_info.core_control_mask & BIT(cpu)))
 			continue;
@@ -5379,7 +5415,7 @@ int msm_thermal_init(struct msm_thermal_data *pdata)
 	if (ret)
 		pr_err("cannot register cpufreq notifier. err:%d\n", ret);
 
-	if (!lmh_dcvs_available) {
+	if (!lmh_dcvs_is_supported) {
 		register_reboot_notifier(&msm_thermal_reboot_notifier);
 		pm_notifier(msm_thermal_suspend_callback, 0);
 	}
@@ -7414,6 +7450,7 @@ static int msm_thermal_dev_probe(struct platform_device *pdev)
 	if (ret)
 		goto probe_exit;
 
+	lmh_dcvs_is_supported = of_property_read_bool(node, "clock-names");
 	probe_cc(node, &data, pdev);
 	probe_freq_mitigation(node, &data, pdev);
 	probe_cx_phase_ctrl(node, &data, pdev);
@@ -7517,6 +7554,13 @@ static int msm_thermal_dev_exit(struct platform_device *inp_dev)
 
 	return 0;
 }
+
+void set_ktm_freq_limit(uint32_t freq_limit)
+{
+	if (freq_limit > 0)
+		msm_thermal_info.freq_limit = freq_limit;
+}
+
 
 static int __init ktm_params(char *str)
 {
