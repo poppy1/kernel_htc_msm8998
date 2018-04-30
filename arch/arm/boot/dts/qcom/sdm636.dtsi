@@ -16,7 +16,22 @@
 	model = "Qualcomm Technologies, Inc. SDM 636";
 	compatible = "qcom,sdm636";
 	qcom,msm-id = <345 0x0>;
+<<<<<<< HEAD
 
+=======
+};
+
+&soc {
+	/delete-node/ qcom,turing@1a300000;
+
+	/delete-node/ cti@7068000;
+	/delete-node/ turing_etm0;
+	funnel@6042000 {
+		ports {
+			/delete-node/ port@4;
+		};
+	};
+>>>>>>> LA.UM.6.4.r1-03500-8x98.0
 };
 
 &soc {

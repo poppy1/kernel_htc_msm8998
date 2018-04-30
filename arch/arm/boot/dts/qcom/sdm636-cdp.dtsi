@@ -14,3 +14,17 @@
 / {
 };
 
+<<<<<<< HEAD
+=======
+&mdss_dsi {
+	hw-config = "single_dsi";
+};
+
+&mdss_dsi0 {
+	qcom,dsi-pref-prim-pan = <&dsi_nt35695b_truly_fhd_video>;
+};
+
+&mdss_dsi1 {
+	status = "disabled";
+};
+>>>>>>> LA.UM.6.4.r1-03500-8x98.0
