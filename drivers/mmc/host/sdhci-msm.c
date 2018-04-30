@@ -4835,6 +4835,8 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			pr_err("%s: Failed to create sd_speed_class entry\n",
 				mmc_hostname(host->mmc));
 	}
+	if (sdhci_msm_is_bootdevice(&pdev->dev))
+		mmc_flush_detect_work(host->mmc);
 
 	/* Successful initialization */
 	goto out;
