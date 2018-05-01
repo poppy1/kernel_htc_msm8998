@@ -611,7 +611,7 @@ void add_disk(struct gendisk *disk)
 	disk_alloc_events(disk);
 
 	/* Register BDI before referencing it from bdev */
-	bdi = &disk->queue->backing_dev_info;
+	bdi = disk->queue->backing_dev_info;
 	bdi_register_owner(bdi, disk_to_dev(disk));
 
 	blk_register_region(disk_devt(disk), disk->minors, NULL,
@@ -647,6 +647,8 @@ void del_gendisk_no_sync(struct gendisk *disk, bool flag)
 	disk_part_iter_init(&piter, disk,
 			     DISK_PITER_INCL_EMPTY | DISK_PITER_REVERSE);
 	while ((part = disk_part_iter_next(&piter))) {
+		bdev_unhash_inode(MKDEV(disk->major,
+					disk->first_minor + part->partno));
 		if (flag == true) {
 			bdev = bdget_disk(disk, part->partno);
 			if (bdev) {
@@ -678,7 +680,7 @@ void del_gendisk_no_sync(struct gendisk *disk, bool flag)
 		 * Unregister bdi before releasing device numbers (as they can
 		 * get reused and we'd get clashes in sysfs).
 		 */
-		bdi_unregister(&disk->queue->backing_dev_info);
+		bdi_unregister(disk->queue->backing_dev_info);
 		blk_unregister_queue(disk);
 	} else {
 		WARN_ON(1);
